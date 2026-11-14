@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: ledger } }
+  template:
+    metadata:
+      labels: { app: ledger }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      containers:
+        - name: ledger
+          image: aqsha:ci
+          imagePullPolicy: IfNotPresent
+          args: ["ledger"]
+          env:
+            - { name: DATABASE_URL, value: "postgres://aqsha:aqsha@postgres:5432/ledger" }
+            - { name: KAFKA_BROKERS, value: "kafka:9092" }
+          ports:
+            - { name: grpc, containerPort: 9090 }
+            - { name: metrics, containerPort: 9100 }
+          # Нативная gRPC-проба Kubernetes: опрашивает grpc.health.v1, который поднимает сервис
+          readinessProbe:
+            grpc: { port: 9090 }
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger
+spec:
+  selector: { app: ledger }
+  ports:
+    - { name: grpc, port: 9090 }
+    - { name: metrics, port: 9100 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: payments } }
+  template:
+    metadata:
+      labels: { app: payments }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      containers:
+        - name: payments
+          image: aqsha:ci
+          imagePullPolicy: IfNotPresent
+          args: ["payments"]
+          env:
+            - { name: DATABASE_URL, value: "postgres://aqsha:aqsha@postgres:5432/payments" }
+            - { name: KAFKA_BROKERS, value: "kafka:9092" }
+            - name: API_KEYS
+              valueFrom: { secretKeyRef: { name: payments-api-keys, key: API_KEYS } }
+          ports:
+            - { name: grpc, containerPort: 9090 }
+            - { name: metrics, containerPort: 9100 }
+          # Нативная gRPC-проба Kubernetes: опрашивает grpc.health.v1, который поднимает сервис
+          readinessProbe:
+            grpc: { port: 9090 }
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments
+spec:
+  selector: { app: payments }
+  ports:
+    - { name: grpc, port: 9090 }
+    - { name: metrics, port: 9100 }

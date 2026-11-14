@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package aqsha.payments.v1;
+
+option go_package = "github.com/A160LKN/aqsha/gen/aqsha/payments/v1;paymentsv1";
+
+// PaymentService принимает переводы от клиентов. Перевод выполняется асинхронно:
+// ответ CreateTransfer — статус PENDING, итог появляется в GetTransfer.
+// Каждый вызов требует метаданные x-api-key.
+service PaymentService {
+  rpc CreateTransfer(CreateTransferRequest) returns (CreateTransferResponse);
+  rpc GetTransfer(GetTransferRequest) returns (GetTransferResponse);
+}
+
+enum TransferStatus {
+  TRANSFER_STATUS_UNSPECIFIED = 0;
+  TRANSFER_STATUS_PENDING = 1;
+  TRANSFER_STATUS_COMPLETED = 2;
+  TRANSFER_STATUS_FAILED = 3;
+}
+
+message Transfer {
+  string id = 1;
+  string from_account = 2;
+  string to_account = 3;
+  int64 amount_tiyn = 4;
+  TransferStatus status = 5;
+  // Причина отказа для FAILED: insufficient_funds, account_not_found.
+  string failure_reason = 6;
+}
+
+message CreateTransferRequest {
+  // Ключ идемпотентности: повтор с тем же ключом возвращает тот же перевод.
+  string idempotency_key = 1;
+  string from_account = 2;
+  string to_account = 3;
+  int64 amount_tiyn = 4;
+}
+
+message GetTransferRequest {
+  string id = 1;
+}
+
+message CreateTransferResponse {
+  Transfer transfer = 1;
+}
+
+message GetTransferResponse {
+  Transfer transfer = 1;
+}

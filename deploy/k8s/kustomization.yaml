@@ -1,0 +1,18 @@
+# Развёртывание в Kubernetes: kubectl apply -k deploy/k8s
+# В CI — в кластере kind с образом aqsha:ci.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aqsha
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - kafka.yaml
+  - services.yaml
+configMapGenerator:
+  - name: postgres-init
+    files:
+      - init.sql=postgres-init.sql
+secretGenerator:
+  - name: payments-api-keys
+    literals:
+      - API_KEYS=demo-key-change-me:demo

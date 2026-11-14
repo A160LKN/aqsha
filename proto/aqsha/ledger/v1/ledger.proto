@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package aqsha.ledger.v1;
+
+option go_package = "github.com/A160LKN/aqsha/gen/aqsha/ledger/v1;ledgerv1";
+
+// LedgerService владеет деньгами: счета, балансы и проводки.
+// Переводы приходят не сюда, а событиями из Kafka — см. aqsha.events.v1.
+service LedgerService {
+  rpc OpenAccount(OpenAccountRequest) returns (OpenAccountResponse);
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
+  // Пополнение повторяемо: тот же deposit_id второй раз ничего не зачисляет.
+  rpc Deposit(DepositRequest) returns (DepositResponse);
+}
+
+message Account {
+  string id = 1;
+  string owner = 2;
+  // Баланс в тиынах: 1 ₸ = 100 тиынов, дробей нет.
+  int64 balance_tiyn = 3;
+  string currency = 4;
+}
+
+message OpenAccountRequest {
+  string owner = 1;
+}
+
+message GetAccountRequest {
+  string id = 1;
+}
+
+message DepositRequest {
+  string account_id = 1;
+  int64 amount_tiyn = 2;
+  string deposit_id = 3;
+}
+
+message OpenAccountResponse {
+  Account account = 1;
+}
+
+message GetAccountResponse {
+  Account account = 1;
+}
+
+message DepositResponse {
+  Account account = 1;
+}

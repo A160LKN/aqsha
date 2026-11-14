@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package aqsha.events.v1;
+
+option go_package = "github.com/A160LKN/aqsha/gen/aqsha/events/v1;eventsv1";
+
+// Топик aqsha.transfers.requested, ключ — счёт списания:
+// переводы с одного счёта попадают в одну партицию и обрабатываются по порядку.
+message TransferRequested {
+  string event_id = 1;
+  string transfer_id = 2;
+  string from_account = 3;
+  string to_account = 4;
+  int64 amount_tiyn = 5;
+}
+
+// Топик aqsha.transfers.results, ключ — id перевода.
+message TransferResult {
+  string event_id = 1;
+  string transfer_id = 2;
+  Outcome outcome = 3;
+  string failure_reason = 4;
+
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_COMPLETED = 1;
+    OUTCOME_FAILED = 2;
+  }
+}
