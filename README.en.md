@@ -43,6 +43,13 @@ flowchart LR
 
 47 tests (91 checks with subtests) + 6 E2E. Service code coverage is 82.6 %, CI fails below 80 %. Load: **247 transfers per second, p95 10 ms**, balances reconcile to the tiyn.
 
+### What the tests found
+
+| Where | What was wrong | Found by |
+| --- | --- | --- |
+| Migrations | the service started without tables: migration files sat in a nested folder of the embedded file system, the lookup found none and silently reported success — every request would have returned `500` | ledger integration tests · [root cause analysis](docs/testing/rca-bug-01.md) |
+| Chaos test in Kubernetes | when restarting `kubectl port-forward`, `pkill -f` matched and killed its own shell — the test failed for a reason unrelated to the service; the process is now stopped by a PID file | first CI run in kind |
+
 Test documentation (in Russian): [test strategy](docs/testing/test-strategy.md) · [test programme and methodology per GOST 19.301](docs/testing/pmi.md) · [test report](docs/testing/protocol.md) · [defect root cause analysis](docs/testing/rca-bug-01.md)
 
 ## Running locally
