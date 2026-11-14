@@ -129,7 +129,7 @@ jobs:
           STOP_LEDGER_CMD: kubectl -n aqsha scale deploy/ledger --replicas=0 && kubectl -n aqsha wait --for=delete pod -l app=ledger --timeout=60s
           START_LEDGER_CMD: >-
             kubectl -n aqsha scale deploy/ledger --replicas=1 && kubectl -n aqsha rollout status deploy/ledger --timeout=120s &&
-            (pkill -f "port-forward svc/ledger" || true) &&
+            (pkill -f "port-forward sv[c]/ledger" || true) &&
             (kubectl -n aqsha port-forward svc/ledger 19091:9090 > /tmp/pf-ledger.log 2>&1 &) && sleep 3
         run: |
           kubectl -n aqsha port-forward svc/payments 19090:9090 > /tmp/pf-payments.log 2>&1 &
