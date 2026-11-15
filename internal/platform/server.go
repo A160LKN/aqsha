@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -51,9 +52,26 @@ func NewKafka(brokers []string, group string, topics ...string) (*kgo.Client, er
 	return kgo.NewClient(opts...)
 }
 
+// MaxRecvMsgSize — самое большое сообщение, которое примет сервер. Перевод — это сотни байт;
+// предел защищает память сервиса от огромных запросов (по умолчанию в gRPC — 4 МБ).
+const MaxRecvMsgSize = 64 << 10
+
+// NewGRPCServer — gRPC-сервер с защитными настройками: предел размера сообщения, число потоков
+// на соединение, таймаут рукопожатия и запрет слишком частых keepalive-пингов (защита от флуда).
+func NewGRPCServer(interceptors ...grpc.UnaryServerInterceptor) *grpc.Server {
+	return grpc.NewServer(
+		grpc.ChainUnaryInterceptor(interceptors...),
+		grpc.MaxRecvMsgSize(MaxRecvMsgSize),
+		grpc.MaxConcurrentStreams(256),
+		grpc.ConnectionTimeout(10*time.Second),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 10 * time.Second, PermitWithoutStream: true}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{MaxConnectionIdle: 5 * time.Minute}),
+	)
+}
+
 // Serve запускает gRPC (с health и reflection) и /metrics, ждёт отмены ctx и останавливается аккуратно.
 func Serve(ctx context.Context, log *slog.Logger, grpcAddr, metricsAddr string, register func(*grpc.Server), interceptors ...grpc.UnaryServerInterceptor) error {
-	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(interceptors...))
+	srv := NewGRPCServer(interceptors...)
 	register(srv)
 	hs := health.NewServer()
 	healthpb.RegisterHealthServer(srv, hs)
