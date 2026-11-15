@@ -45,7 +45,8 @@ jobs:
           test -z "$(gofmt -l .)" || { gofmt -l .; echo "::error::Запустите gofmt -w ."; exit 1; }
           go vet ./... && go vet -tags e2e ./e2e
       - name: Уязвимости в зависимостях и стандартной библиотеке (govulncheck)
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        # Версия закреплена: govulncheck новее 1.1.x требует Go 1.26, а проект собирается на Go 1.24
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
   tests:
     name: Юнит, интеграционные и системные тесты
