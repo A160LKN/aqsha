@@ -1,0 +1,51 @@
+name: Обновление Go и уязвимых зависимостей
+
+# Запускается вручную: поднимает версию Go в go.mod и обновляет модули, в которых govulncheck нашёл уязвимости.
+# Изменения проходят сборку, тесты и govulncheck и только потом попадают в main.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: aqsha
+          POSTGRES_PASSWORD: aqsha
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U aqsha" --health-interval 2s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://aqsha:aqsha@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27"
+      - name: Обновить Go и модули
+        run: |
+          go mod edit -go=1.27
+          go get google.golang.org/grpc@latest golang.org/x/net@latest golang.org/x/text@latest \
+            github.com/jackc/pgx/v5@latest github.com/klauspost/compress@latest
+          go mod tidy
+      - name: Сборка, vet и тесты
+        run: |
+          go build ./...
+          go vet ./... && go vet -tags e2e ./e2e
+          go test -race -count=1 ./...
+      - name: Уязвимостей не осталось (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: Закоммитить в main
+        run: |
+          git config user.name "a160l"
+          git config user.email "aibolkazbayev@gmail.com"
+          git add go.mod go.sum
+          git diff --cached --quiet && { echo "Обновлять нечего"; exit 0; }
+          git commit -m "Go 1.27 and patched grpc, x/net, x/text, pgx, compress (govulncheck findings)"
+          git push
