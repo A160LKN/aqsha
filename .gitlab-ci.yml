@@ -3,7 +3,7 @@
 stages: [contracts, test, e2e]
 
 variables:
-  GO_IMAGE: golang:1.24
+  GO_IMAGE: golang:1.27
 
 contracts:
   stage: contracts

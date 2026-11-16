@@ -6,7 +6,7 @@
 
 Два сервиса переводят деньги между счетами через Kafka. Главное в проекте — тесты, которые доказывают, что перевод проходит **ровно один раз**: при повторной доставке события, падении сервиса посреди обработки, недоступной Kafka и одновременных запросах. _Ақша_ по-казахски — «деньги».
 
-**Стек:** Go 1.24, gRPC + protobuf (buf), Apache Kafka (franz-go), PostgreSQL (pgx), Prometheus, Grafana, Docker, Kubernetes · **Тесты:** Go + Testify, kfake, bufconn, k6 · **CI:** GitHub Actions, GitLab CI
+**Стек:** Go 1.27, gRPC + protobuf (buf), Apache Kafka (franz-go), PostgreSQL (pgx), Prometheus, Grafana, Docker, Kubernetes · **Тесты:** Go + Testify, kfake, bufconn, k6 · **CI:** GitHub Actions, GitLab CI
 
 ```mermaid
 flowchart LR

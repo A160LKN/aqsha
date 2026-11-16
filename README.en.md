@@ -6,7 +6,7 @@
 
 Two services move money between accounts through Kafka. The point of the project is the test suite proving that a transfer happens **exactly once**: under redelivered events, a service crashing mid-processing, Kafka being down and concurrent requests. _Aqsha_ means "money" in Kazakh.
 
-**Stack:** Go 1.24, gRPC + protobuf (buf), Apache Kafka (franz-go), PostgreSQL (pgx), Prometheus, Grafana, Docker, Kubernetes · **Tests:** Go + Testify, kfake, bufconn, k6 · **CI:** GitHub Actions, GitLab CI
+**Stack:** Go 1.27, gRPC + protobuf (buf), Apache Kafka (franz-go), PostgreSQL (pgx), Prometheus, Grafana, Docker, Kubernetes · **Tests:** Go + Testify, kfake, bufconn, k6 · **CI:** GitHub Actions, GitLab CI
 
 ```mermaid
 flowchart LR

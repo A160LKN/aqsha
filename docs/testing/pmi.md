@@ -47,7 +47,7 @@
 
 5.1. Технические средства: среда GitHub Actions (Ubuntu 24.04, 4 vCPU, 16 ГБ ОЗУ) или рабочая станция с Docker.
 
-5.2. Программные средства: Go 1.24, Docker Compose, kind, PostgreSQL 17, Apache Kafka 3.9.1, k6, buf.
+5.2. Программные средства: Go 1.27, Docker Compose, kind, PostgreSQL 17, Apache Kafka 3.9.1, k6, buf.
 
 5.3. Порядок испытаний:
 1. Проверка контрактов и статический анализ (задание CI «Контракты»).
