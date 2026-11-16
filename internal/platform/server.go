@@ -111,7 +111,13 @@ func Serve(ctx context.Context, log *slog.Logger, grpcAddr, metricsAddr string, 
 	}
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return metrics.Shutdown(sctx)
+	// Повисшее keep-alive соединение (например, от Prometheus) не должно превращать остановку в ошибку:
+	// ждём 5 секунд, потом закрываем принудительно
+	if err := metrics.Shutdown(sctx); errors.Is(err, context.DeadlineExceeded) {
+		return metrics.Close()
+	} else {
+		return err
+	}
 }
 
 // Healthcheck — режим проверки здоровья для Docker: образ distroless без shell и curl,

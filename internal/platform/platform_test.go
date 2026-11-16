@@ -2,6 +2,7 @@ package platform_test
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -142,9 +143,12 @@ func TestServeLifecycle(t *testing.T) {
 		return err == nil && r.GetStatus() == healthpb.HealthCheckResponse_SERVING
 	}, "gRPC health отвечает SERVING")
 
+	// Без keep-alive: тест проверяет остановку сервера, а не то, как быстро клиент отпустит соединение
+	client := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 	for _, path := range []string{"/healthz", "/metrics"} {
-		resp, err := http.Get("http://" + metricsAddr + path)
+		resp, err := client.Get("http://" + metricsAddr + path)
 		require.NoError(t, err)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 		assert.Equal(t, http.StatusOK, resp.StatusCode, path)
 	}
