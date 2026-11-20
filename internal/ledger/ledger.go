@@ -47,25 +47,26 @@ type Service struct {
 	Log  *slog.Logger
 }
 
-// OpenAccount открывает счёт с нулевым балансом.
+// OpenAccount открывает счёт с нулевым балансом. Владелец счёта — клиент из x-api-key.
 func (s *Service) OpenAccount(ctx context.Context, req *ledgerv1.OpenAccountRequest) (*ledgerv1.OpenAccountResponse, error) {
 	owner := strings.TrimSpace(req.GetOwner())
 	if owner == "" || len([]rune(owner)) > 100 {
 		return nil, status.Error(codes.InvalidArgument, "owner: от 1 до 100 символов")
 	}
 	acc := &ledgerv1.Account{Id: platform.NewID("acc"), Owner: owner, Currency: "KZT"}
-	if _, err := s.Pool.Exec(ctx, `INSERT INTO accounts (id, owner) VALUES ($1, $2)`, acc.Id, acc.Owner); err != nil {
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO accounts (id, owner, client_id) VALUES ($1, $2, $3)`,
+		acc.Id, acc.Owner, platform.ClientID(ctx)); err != nil {
 		return nil, s.internal(ctx, err)
 	}
 	return &ledgerv1.OpenAccountResponse{Account: acc}, nil
 }
 
-// GetAccount возвращает счёт с текущим балансом.
+// GetAccount возвращает счёт с текущим балансом. Чужой счёт выглядит как несуществующий.
 func (s *Service) GetAccount(ctx context.Context, req *ledgerv1.GetAccountRequest) (*ledgerv1.GetAccountResponse, error) {
 	if req.GetId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "id обязателен")
 	}
-	acc, err := getAccount(ctx, s.Pool, req.GetId())
+	acc, err := getAccount(ctx, s.Pool, req.GetId(), platform.ClientID(ctx))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, status.Error(codes.NotFound, "счёт не найден")
 	}
@@ -90,7 +91,8 @@ func (s *Service) Deposit(ctx context.Context, req *ledgerv1.DepositRequest) (*l
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	var exists bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM accounts WHERE id = $1)`, req.GetAccountId()).Scan(&exists); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM accounts WHERE id = $1 AND client_id = $2)`,
+		req.GetAccountId(), platform.ClientID(ctx)).Scan(&exists); err != nil {
 		return nil, s.internal(ctx, err)
 	}
 	if !exists {
@@ -119,7 +121,7 @@ func (s *Service) Deposit(ctx context.Context, req *ledgerv1.DepositRequest) (*l
 			return nil, s.internal(ctx, err)
 		}
 	}
-	acc, err := getAccount(ctx, tx, req.GetAccountId())
+	acc, err := getAccount(ctx, tx, req.GetAccountId(), platform.ClientID(ctx))
 	if err != nil {
 		return nil, s.internal(ctx, err)
 	}
@@ -138,9 +140,9 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-func getAccount(ctx context.Context, q querier, id string) (*ledgerv1.Account, error) {
+func getAccount(ctx context.Context, q querier, id, client string) (*ledgerv1.Account, error) {
 	acc := &ledgerv1.Account{}
-	err := q.QueryRow(ctx, `SELECT id, owner, balance, currency FROM accounts WHERE id = $1`, id).
+	err := q.QueryRow(ctx, `SELECT id, owner, balance, currency FROM accounts WHERE id = $1 AND client_id = $2`, id, client).
 		Scan(&acc.Id, &acc.Owner, &acc.BalanceTiyn, &acc.Currency)
 	return acc, err
 }

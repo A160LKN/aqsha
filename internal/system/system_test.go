@@ -60,7 +60,7 @@ func start(t *testing.T, withLedgerConsumer bool) *system {
 
 	lconn := testutil.GRPC(t, func(g *grpc.Server) {
 		ledgerv1.RegisterLedgerServiceServer(g, &ledger.Service{Pool: lpool, Log: log})
-	}, platform.UnaryInterceptor(log))
+	}, platform.UnaryInterceptor(log), platform.AuthInterceptor(map[string]string{"system-key-1": "shop"}))
 	pconn := testutil.GRPC(t, func(g *grpc.Server) {
 		paymentsv1.RegisterPaymentServiceServer(g, &payments.Service{Pool: ppool, Log: log})
 	}, platform.UnaryInterceptor(log), payments.AuthInterceptor(map[string]string{"system-key-1": "shop"}))
@@ -75,10 +75,10 @@ func (s *system) ctx() context.Context {
 
 func (s *system) account(balance int64) string {
 	s.t.Helper()
-	acc, err := s.ledger.OpenAccount(context.Background(), &ledgerv1.OpenAccountRequest{Owner: "клиент"})
+	acc, err := s.ledger.OpenAccount(s.ctx(), &ledgerv1.OpenAccountRequest{Owner: "клиент"})
 	require.NoError(s.t, err)
 	if balance > 0 {
-		_, err = s.ledger.Deposit(context.Background(), &ledgerv1.DepositRequest{
+		_, err = s.ledger.Deposit(s.ctx(), &ledgerv1.DepositRequest{
 			AccountId: acc.GetAccount().GetId(), AmountTiyn: balance, DepositId: platform.NewUUID()})
 		require.NoError(s.t, err)
 	}
@@ -87,7 +87,7 @@ func (s *system) account(balance int64) string {
 
 func (s *system) balance(id string) int64 {
 	s.t.Helper()
-	r, err := s.ledger.GetAccount(context.Background(), &ledgerv1.GetAccountRequest{Id: id})
+	r, err := s.ledger.GetAccount(s.ctx(), &ledgerv1.GetAccountRequest{Id: id})
 	require.NoError(s.t, err)
 	return r.GetAccount().GetBalanceTiyn()
 }

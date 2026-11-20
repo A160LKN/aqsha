@@ -27,9 +27,10 @@ var unsent = promauto.NewGaugeVec(prometheus.GaugeOpts{
 }, []string{"service"})
 
 // Add записывает событие в outbox внутри уже открытой транзакции.
+// Идентификатор запроса и клиент из контекста уйдут в заголовки записи Kafka.
 func Add(ctx context.Context, tx pgx.Tx, topic, key string, payload []byte) error {
-	_, err := tx.Exec(ctx, `INSERT INTO outbox (topic, key, payload, trace_id) VALUES ($1, $2, $3, $4)`,
-		topic, key, payload, platform.Trace(ctx))
+	_, err := tx.Exec(ctx, `INSERT INTO outbox (topic, key, payload, trace_id, client_id) VALUES ($1, $2, $3, $4, $5)`,
+		topic, key, payload, platform.Trace(ctx), platform.ClientID(ctx))
 	return err
 }
 
@@ -80,7 +81,7 @@ func (r *Relay) Flush(ctx context.Context) (int, error) {
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	rows, err := tx.Query(ctx, `SELECT id, topic, key, payload, trace_id FROM outbox
+	rows, err := tx.Query(ctx, `SELECT id, topic, key, payload, trace_id, client_id FROM outbox
 		WHERE sent_at IS NULL ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED`, batch)
 	if err != nil {
 		return 0, err
@@ -90,14 +91,17 @@ func (r *Relay) Flush(ctx context.Context) (int, error) {
 	for rows.Next() {
 		var id int64
 		rec := &kgo.Record{}
-		var key, trace string
-		if err := rows.Scan(&id, &rec.Topic, &key, &rec.Value, &trace); err != nil {
+		var key, trace, client string
+		if err := rows.Scan(&id, &rec.Topic, &key, &rec.Value, &trace, &client); err != nil {
 			rows.Close()
 			return 0, err
 		}
 		rec.Key = []byte(key)
 		if trace != "" {
-			rec.Headers = []kgo.RecordHeader{{Key: platform.TraceHeader, Value: []byte(trace)}}
+			rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: platform.TraceHeader, Value: []byte(trace)})
+		}
+		if client != "" {
+			rec.Headers = append(rec.Headers, kgo.RecordHeader{Key: platform.ClientHeader, Value: []byte(client)})
 		}
 		ids = append(ids, id)
 		recs = append(recs, rec)

@@ -68,7 +68,7 @@ func (c *Consumer) Handle(ctx context.Context, rec *kgo.Record) error {
 		return nil
 	}
 
-	outcome, reason, err := apply(ctx, tx, &ev)
+	outcome, reason, err := apply(ctx, tx, &ev, platform.HeaderValue(rec, platform.ClientHeader))
 	if err != nil {
 		return err
 	}
@@ -96,30 +96,39 @@ func (c *Consumer) Handle(ctx context.Context, rec *kgo.Record) error {
 
 // apply двигает деньги. Оба счёта блокируются в порядке id — два встречных перевода
 // (A→B и B→A) не возьмут блокировки крест-накрест и не уйдут в deadlock.
-func apply(ctx context.Context, tx pgx.Tx, ev *eventsv1.TransferRequested) (eventsv1.TransferResult_Outcome, string, error) {
-	rows, err := tx.Query(ctx, `SELECT id, balance FROM accounts WHERE id = ANY($1) ORDER BY id FOR UPDATE`,
+//
+// client — клиент API, создавший перевод (заголовок Kafka). Списать можно только со своего счёта:
+// чужой счёт для клиента не существует, поэтому и причина отказа та же — account_not_found.
+// Зачислить можно на любой существующий счёт.
+func apply(ctx context.Context, tx pgx.Tx, ev *eventsv1.TransferRequested, client string) (eventsv1.TransferResult_Outcome, string, error) {
+	rows, err := tx.Query(ctx, `SELECT id, balance, client_id FROM accounts WHERE id = ANY($1) ORDER BY id FOR UPDATE`,
 		[]string{ev.GetFromAccount(), ev.GetToAccount()})
 	if err != nil {
 		return 0, "", err
 	}
-	balances := map[string]int64{}
+	type account struct {
+		balance int64
+		client  string
+	}
+	accounts := map[string]account{}
 	for rows.Next() {
 		var id string
-		var b int64
-		if err := rows.Scan(&id, &b); err != nil {
+		var a account
+		if err := rows.Scan(&id, &a.balance, &a.client); err != nil {
 			rows.Close()
 			return 0, "", err
 		}
-		balances[id] = b
+		accounts[id] = a
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return 0, "", err
 	}
-	from, okFrom := balances[ev.GetFromAccount()]
-	_, okTo := balances[ev.GetToAccount()]
+	src, okFrom := accounts[ev.GetFromAccount()]
+	_, okTo := accounts[ev.GetToAccount()]
+	from := src.balance
 	switch {
-	case !okFrom || !okTo:
+	case !okFrom || !okTo || client == "" || src.client != client:
 		return eventsv1.TransferResult_OUTCOME_FAILED, ReasonAccountNotFound, nil
 	case from < ev.GetAmountTiyn():
 		return eventsv1.TransferResult_OUTCOME_FAILED, ReasonInsufficientFunds, nil

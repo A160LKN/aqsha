@@ -8,6 +8,7 @@ resources:
   - postgres.yaml
   - kafka.yaml
   - services.yaml
+  - networkpolicy.yaml
 configMapGenerator:
   - name: postgres-init
     files:
