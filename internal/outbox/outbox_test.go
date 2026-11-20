@@ -22,7 +22,7 @@ const topic = platform.TopicTransferResults
 
 func add(t *testing.T, pool *pgxpool.Pool, n int) {
 	t.Helper()
-	ctx := platform.WithTrace(context.Background(), "trace-outbox")
+	ctx := platform.WithClient(platform.WithTrace(context.Background(), "trace-outbox"), "shop")
 	tx, err := pool.Begin(ctx)
 	require.NoError(t, err)
 	for i := range n {
@@ -55,6 +55,7 @@ func TestFlushPublishesInOrder(t *testing.T) {
 	for i, rec := range recs {
 		assert.Equal(t, fmt.Sprintf("event-%03d", i), string(rec.Value), "порядок сохранён")
 		assert.Equal(t, "trace-outbox", platform.HeaderValue(rec, platform.TraceHeader))
+		assert.Equal(t, "shop", platform.HeaderValue(rec, platform.ClientHeader), "клиент дошёл до сервиса счетов")
 	}
 }
 

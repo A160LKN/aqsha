@@ -42,6 +42,8 @@ services:
     environment:
       DATABASE_URL: postgres://aqsha:aqsha@postgres:5432/ledger
       KAFKA_BROKERS: kafka:29092
+      # Те же клиенты, что у сервиса платежей: счёт принадлежит клиенту, который его открыл
+      API_KEYS: demo-key-change-me:demo
     ports: ["9091:9090", "9101:9100"]
     depends_on:
       postgres: { condition: service_healthy }

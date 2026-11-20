@@ -61,11 +61,14 @@ docker compose up --build --wait                          # PostgreSQL, Kafka, �
 docker compose --profile observability up --wait          # плюс Prometheus и Grafana: http://localhost:3000
 ```
 
-Попробовать через [grpcurl](https://github.com/fullstorydev/grpcurl) — у сервисов включён reflection:
+Попробовать через [grpcurl](https://github.com/fullstorydev/grpcurl) — у сервисов включён reflection.
+Оба сервиса требуют ключ `x-api-key` (переменная `API_KEYS`). Счёт принадлежит клиенту, который его открыл:
+чужой счёт нельзя прочитать, пополнить или списать с него деньги — для клиента его просто нет.
 
 ```bash
-grpcurl -plaintext -d '{"owner":"Алия"}' localhost:9091 aqsha.ledger.v1.LedgerService/OpenAccount
-grpcurl -plaintext -d '{"account_id":"acc_…","amount_tiyn":1000000,"deposit_id":"d1"}' localhost:9091 aqsha.ledger.v1.LedgerService/Deposit
+grpcurl -plaintext -H 'x-api-key: demo-key-change-me' -d '{"owner":"Алия"}' localhost:9091 aqsha.ledger.v1.LedgerService/OpenAccount
+grpcurl -plaintext -H 'x-api-key: demo-key-change-me' \
+  -d '{"account_id":"acc_…","amount_tiyn":1000000,"deposit_id":"d1"}' localhost:9091 aqsha.ledger.v1.LedgerService/Deposit
 grpcurl -plaintext -H 'x-api-key: demo-key-change-me' \
   -d '{"idempotency_key":"order-0001","from_account":"acc_…","to_account":"acc_…","amount_tiyn":250000}' \
   localhost:9090 aqsha.payments.v1.PaymentService/CreateTransfer

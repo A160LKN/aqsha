@@ -11,6 +11,7 @@ const LEDGER = __ENV.LEDGER_ADDR || 'localhost:9091';
 const KEY = __ENV.API_KEY || 'demo-key-change-me';
 const ACCOUNTS = 20;
 const START = 1_000_000_00; // 1 млн ₸ на каждом счёте
+const AUTH = { metadata: { 'x-api-key': KEY } }; // сервис счетов тоже требует ключ
 
 const client = new grpc.Client();
 client.load(['../proto'], 'aqsha/payments/v1/payments.proto', 'aqsha/ledger/v1/ledger.proto');
@@ -42,9 +43,9 @@ export function setup() {
   client.connect(LEDGER, { plaintext: true });
   const ids = [];
   for (let i = 0; i < ACCOUNTS; i++) {
-    const acc = client.invoke('aqsha.ledger.v1.LedgerService/OpenAccount', { owner: `load-${i}` });
+    const acc = client.invoke('aqsha.ledger.v1.LedgerService/OpenAccount', { owner: `load-${i}` }, AUTH);
     const id = acc.message.account.id;
-    client.invoke('aqsha.ledger.v1.LedgerService/Deposit', { accountId: id, amountTiyn: START, depositId: uuid() });
+    client.invoke('aqsha.ledger.v1.LedgerService/Deposit', { accountId: id, amountTiyn: START, depositId: uuid() }, AUTH);
     ids.push(id);
   }
   client.close();
@@ -72,7 +73,7 @@ export function teardown(data) {
   client.connect(LEDGER, { plaintext: true });
   let total = 0;
   for (const id of data.ids) {
-    const b = Number(client.invoke('aqsha.ledger.v1.LedgerService/GetAccount', { id }).message.account.balanceTiyn);
+    const b = Number(client.invoke('aqsha.ledger.v1.LedgerService/GetAccount', { id }, AUTH).message.account.balanceTiyn);
     if (b < 0) integrity.add(1);
     total += b;
   }

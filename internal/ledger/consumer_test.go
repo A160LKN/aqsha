@@ -30,10 +30,17 @@ func newFixture(t *testing.T) fixture {
 	return fixture{pool: pool, c: &ledger.Consumer{Pool: pool, Log: testutil.Log(t)}}
 }
 
+const client = "shop"
+
 func (f fixture) account(t *testing.T, balance int64) string {
 	t.Helper()
+	return f.accountOf(t, client, balance)
+}
+
+func (f fixture) accountOf(t *testing.T, client string, balance int64) string {
+	t.Helper()
 	id := platform.NewID("acc")
-	_, err := f.pool.Exec(context.Background(), `INSERT INTO accounts (id, owner, balance) VALUES ($1, 'тест', $2)`, id, balance)
+	_, err := f.pool.Exec(context.Background(), `INSERT INTO accounts (id, owner, balance, client_id) VALUES ($1, 'тест', $2, $3)`, id, balance, client)
 	require.NoError(t, err)
 	return id
 }
@@ -69,7 +76,10 @@ func event(t *testing.T, from, to string, amount int64) (*kgo.Record, *eventsv1.
 	b, err := proto.Marshal(ev)
 	require.NoError(t, err)
 	return &kgo.Record{Topic: platform.TopicTransferRequested, Key: []byte(from), Value: b,
-		Headers: []kgo.RecordHeader{{Key: platform.TraceHeader, Value: []byte("trace-" + ev.EventId[:8])}}}, ev
+		Headers: []kgo.RecordHeader{
+			{Key: platform.TraceHeader, Value: []byte("trace-" + ev.EventId[:8])},
+			{Key: platform.ClientHeader, Value: []byte(client)},
+		}}, ev
 }
 
 func TestTransferMovesMoney(t *testing.T) {
@@ -157,6 +167,41 @@ func TestUnknownAccount(t *testing.T) {
 	for _, r := range f.results(t) {
 		assert.Equal(t, ledger.ReasonAccountNotFound, r.FailureReason)
 	}
+}
+
+// Клиент API может списывать только со своих счетов: чужой счёт для него не существует.
+// Событие без клиента (так оно не может прийти от сервиса платежей) тоже ничего не списывает.
+func TestCannotDebitForeignAccount(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	foreign, mine := f.accountOf(t, "other-client", 100_00), f.account(t, 0)
+
+	rec, _ := event(t, foreign, mine, 50_00)
+	require.NoError(t, f.c.Handle(context.Background(), rec))
+
+	noClient, _ := event(t, foreign, mine, 50_00)
+	noClient.Headers = noClient.Headers[:1] // только trace
+	require.NoError(t, f.c.Handle(context.Background(), noClient))
+
+	assert.EqualValues(t, 100_00, f.balance(t, foreign), "с чужого счёта ничего не списано")
+	assert.EqualValues(t, 0, f.balance(t, mine))
+	res := f.results(t)
+	require.Len(t, res, 2)
+	for _, r := range res {
+		assert.Equal(t, eventsv1.TransferResult_OUTCOME_FAILED, r.Outcome)
+		assert.Equal(t, ledger.ReasonAccountNotFound, r.FailureReason)
+	}
+}
+
+// Зачислять можно на счёт другого клиента — так платят за товары и услуги.
+func TestCanCreditForeignAccount(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	mine, foreign := f.account(t, 100_00), f.accountOf(t, "other-client", 0)
+	rec, _ := event(t, mine, foreign, 40_00)
+	require.NoError(t, f.c.Handle(context.Background(), rec))
+	assert.EqualValues(t, 60_00, f.balance(t, mine))
+	assert.EqualValues(t, 40_00, f.balance(t, foreign))
 }
 
 // Битое или заведомо неверное событие повтором не исправить — его надо убрать в DLQ, а не крутить вечно.

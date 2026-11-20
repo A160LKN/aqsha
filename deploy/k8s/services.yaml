@@ -20,6 +20,9 @@ spec:
           env:
             - { name: DATABASE_URL, value: "postgres://aqsha:aqsha@postgres:5432/ledger" }
             - { name: KAFKA_BROKERS, value: "kafka:9092" }
+            # Те же клиенты, что у сервиса платежей: счёт принадлежит клиенту, который его открыл
+            - name: API_KEYS
+              valueFrom: { secretKeyRef: { name: payments-api-keys, key: API_KEYS } }
           ports:
             - { name: grpc, containerPort: 9090 }
             - { name: metrics, containerPort: 9100 }

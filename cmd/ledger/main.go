@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"google.golang.org/grpc"
@@ -26,6 +27,11 @@ func main() {
 
 func run(ctx context.Context) error {
 	log := platform.NewLogger("ledger")
+	// Без ключей сервис не стартует: открытый Deposit позволил бы любому в сети «напечатать» деньги
+	keys := platform.ParseKeys(os.Getenv("API_KEYS"))
+	if len(keys) == 0 {
+		return errors.New("API_KEYS не задан: нужен хотя бы один ключ вида ключ:клиент")
+	}
 	pool, err := platform.ConnectDB(ctx, platform.Env("DATABASE_URL", "postgres://aqsha:aqsha@localhost:5432/ledger"))
 	if err != nil {
 		return err
@@ -55,5 +61,5 @@ func run(ctx context.Context) error {
 	svc := &ledger.Service{Pool: pool, Log: log}
 	return platform.Serve(ctx, log, platform.Env("GRPC_ADDR", ":9090"), platform.Env("METRICS_ADDR", ":9100"),
 		func(s *grpc.Server) { ledgerv1.RegisterLedgerServiceServer(s, svc) },
-		platform.UnaryInterceptor(log))
+		platform.UnaryInterceptor(log), platform.AuthInterceptor(keys))
 }

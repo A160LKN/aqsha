@@ -88,7 +88,7 @@ func TestMigrateOnceUnderConcurrency(t *testing.T) {
 	}
 	var n int
 	require.NoError(t, pool.QueryRow(context.Background(), `SELECT count(*) FROM schema_migrations`).Scan(&n))
-	assert.Equal(t, 2, n)
+	assert.Equal(t, 3, n)
 }
 
 func TestMigrateErrors(t *testing.T) {
