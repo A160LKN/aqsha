@@ -3,10 +3,12 @@ package ledger_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -373,6 +375,57 @@ func TestDatabaseOutageIsRetried(t *testing.T) {
 
 	require.NoError(t, f.c.Handle(context.Background(), rec), "после восстановления событие обрабатывается")
 	assert.EqualValues(t, 99_00, f.balance(t, a))
+}
+
+func TestIsPermanent(t *testing.T) {
+	t.Parallel()
+	for code, permanent := range map[string]bool{
+		"23505": true,  // unique_violation
+		"23514": true,  // check_violation
+		"22003": true,  // numeric_value_out_of_range
+		"40P01": false, // deadlock_detected — повтор поможет
+		"40001": false, // serialization_failure
+		"57P01": false, // admin_shutdown — база перезапускается
+	} {
+		err := fmt.Errorf("обёртка: %w", &pgconn.PgError{Code: code})
+		assert.Equal(t, permanent, ledger.IsPermanent(err), code)
+	}
+	assert.True(t, ledger.IsPermanent(fmt.Errorf("%w: битое", ledger.ErrPoison)))
+	assert.False(t, ledger.IsPermanent(errors.New("connection refused")))
+}
+
+// Событие, которое база отвергает каждый раз (нарушено ограничение), уходит в DLQ,
+// а не останавливает партицию: следующие переводы проводятся.
+func TestConstraintViolationGoesToDLQAndPartitionMovesOn(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	brokers := testutil.Kafka(t, 1)
+	a, b, cursed := f.account(t, 100_00), f.account(t, 0), f.account(t, 0)
+	// Счёт, на который база не даёт зачислить: так выглядит постоянная ошибка, которую повтор не исправит
+	_, err := f.pool.Exec(context.Background(), `
+		CREATE FUNCTION reject_cursed() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF NEW.id = '`+cursed+`' THEN RAISE EXCEPTION 'счёт закрыт' USING ERRCODE = 'check_violation'; END IF;
+			RETURN NEW;
+		END $$;
+		CREATE TRIGGER reject_cursed BEFORE UPDATE ON accounts FOR EACH ROW EXECUTE FUNCTION reject_cursed();`)
+	require.NoError(t, err)
+
+	bad, _ := event(t, a, cursed, 10_00)
+	good, _ := event(t, a, b, 30_00)
+	require.NoError(t, testutil.Client(t, brokers, "").ProduceSync(context.Background(), bad, good).FirstErr())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := &ledger.Consumer{Pool: f.pool, Kafka: testutil.Client(t, brokers, "ledger", platform.TopicTransferRequested),
+		Log: testutil.Log(t)}
+	go c.Run(ctx)
+
+	testutil.Eventually(t, func() bool { return f.balance(t, b) == 30_00 }, "перевод после «вечной» ошибки проведён")
+	assert.EqualValues(t, 70_00, f.balance(t, a), "отвергнутый перевод ничего не списал")
+	dlq := testutil.ReadAll(t, brokers, platform.TopicTransferDLQ, 1, 10*time.Second)
+	require.Len(t, dlq, 1)
+	assert.Contains(t, platform.HeaderValue(dlq[0], "error"), "счёт закрыт")
 }
 
 func closedPool(t *testing.T) *pgxpool.Pool {

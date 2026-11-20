@@ -72,7 +72,11 @@ func (r *Results) Run(ctx context.Context) {
 					return
 				}
 				r.Log.Warn("ошибка применения итога, повторю", "err", err)
-				time.Sleep(500 * time.Millisecond)
+				// Остановка сервиса не ждёт: смещение не зафиксировано, итог придёт снова после перезапуска
+				select {
+				case <-ctx.Done():
+				case <-time.After(500 * time.Millisecond):
+				}
 			}
 		})
 		if len(done) > 0 && ctx.Err() == nil {
