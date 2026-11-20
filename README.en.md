@@ -41,7 +41,7 @@ flowchart LR
 | E2E | real Kafka and PostgreSQL in **Docker Compose** and **Kubernetes (kind)**; a **chaos test** stops the ledger mid-flow (`docker compose stop`, `kubectl scale --replicas=0`) |
 | Load | **k6 over gRPC**: p95 and p99, then a check that the sum of all balances is unchanged |
 
-54 tests (more with subtests) + 6 E2E. Security: an API key on both services (an account belongs to its client; other clients' accounts are invisible), a NetworkPolicy in Kubernetes, govulncheck and CodeQL in every CI run, gRPC server limits, policy in [SECURITY.md](SECURITY.md). Service code coverage is 83.7 %, CI fails below 80 %. Load: **262 transfers per second, p95 3.2 ms** (latest CI run), balances reconcile to the tiyn.
+54 tests (more with subtests) + 6 E2E. Security: an API key on both services (an account belongs to its client; other clients' accounts are invisible), a NetworkPolicy in Kubernetes, govulncheck and CodeQL in every CI run, gRPC server limits, policy in [SECURITY.md](SECURITY.md). Service code coverage is about 83 %, CI fails below 80 %. Load: **250–260 transfers per second, p95 in single-digit milliseconds** (CI runs; details in the [test report](docs/testing/protocol.md), in Russian), balances reconcile to the tiyn.
 
 ### What the tests found
 
