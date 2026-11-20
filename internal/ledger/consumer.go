@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/proto"
@@ -26,6 +28,24 @@ const (
 
 // ErrPoison — событие, которое нельзя обработать ни сейчас, ни после повтора: битое или с неверными данными.
 var ErrPoison = errors.New("событие нельзя обработать")
+
+// IsPermanent — ошибка, которую повтор не исправит. Такое событие уходит в DLQ: иначе обработчик
+// крутил бы его вечно, и вся партиция (все переводы с этих счетов) встала бы за ним.
+//
+// Кроме ErrPoison это ошибки PostgreSQL классов 22 (неверные данные) и 23 (нарушено ограничение
+// целостности): то же событие нарушит их и в сотый раз. Обрыв соединения, таймаут, взаимная
+// блокировка (40P01) и конфликт сериализации (40001) — временные: событие повторяется, пока база
+// не вернётся, и не теряется.
+func IsPermanent(err error) bool {
+	if errors.Is(err, ErrPoison) {
+		return true
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return strings.HasPrefix(pgErr.Code, "22") || strings.HasPrefix(pgErr.Code, "23")
+	}
+	return false
+}
 
 // Consumer проводит переводы из топика aqsha.transfers.requested.
 //
@@ -179,16 +199,21 @@ func (c *Consumer) Run(ctx context.Context) {
 
 func (c *Consumer) handleWithRetry(ctx context.Context, rec *kgo.Record) {
 	backoff := 100 * time.Millisecond
-	for {
+	for attempt := 1; ; attempt++ {
 		err := c.Handle(ctx, rec)
 		if err == nil {
 			return
 		}
-		if errors.Is(err, ErrPoison) {
+		if IsPermanent(err) {
 			c.toDLQ(ctx, rec, err)
 			return
 		}
-		c.Log.Warn("ошибка обработки, повторю", "err", err, "offset", rec.Offset,
+		// Долгий сбой — уже не «моргнула сеть»: после 10 попыток пишем ошибкой, чтобы её заметили
+		level := slog.LevelWarn
+		if attempt >= 10 {
+			level = slog.LevelError
+		}
+		c.Log.Log(ctx, level, "ошибка обработки, повторю", "err", err, "attempt", attempt, "offset", rec.Offset,
 			"trace_id", platform.HeaderValue(rec, platform.TraceHeader))
 		select {
 		case <-ctx.Done():
@@ -203,11 +228,16 @@ func (c *Consumer) toDLQ(ctx context.Context, rec *kgo.Record, cause error) {
 	processed.WithLabelValues("dlq").Inc()
 	dlq := &kgo.Record{Topic: platform.TopicTransferDLQ, Key: rec.Key, Value: rec.Value,
 		Headers: append(rec.Headers, kgo.RecordHeader{Key: "error", Value: []byte(cause.Error())})}
-	for ctx.Err() == nil {
+	for {
 		if err := c.Kafka.ProduceSync(ctx, dlq).FirstErr(); err == nil {
 			break
 		}
-		time.Sleep(time.Second)
+		// Остановка сервиса не ждёт Kafka: смещение не зафиксировано, событие придёт снова после перезапуска
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
 	}
 	c.Log.Error("событие отправлено в DLQ", "err", cause, "partition", rec.Partition, "offset", rec.Offset,
 		"trace_id", platform.HeaderValue(rec, platform.TraceHeader))
